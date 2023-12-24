@@ -11,15 +11,15 @@ def visualizing_dataset():
     #Customizing network visualization
     positions = {}
     labels = {}
-    sizes = {}
-    colors = {}
+    sizes = []
+    colors = []
 
     for node in Topology.first().nodes():
         positions[node] = node.coordinates
         labels[node] = f"ID: {node.id}\n{node.coordinates}"
 
         if len(node.base_station.users) > 0:
-            sizes.apppend(3500)
+            sizes.append(3500)
         else:
             sizes.append(1000)
 

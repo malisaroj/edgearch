@@ -6,24 +6,45 @@ import json
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
 
-
-#Load the JSON data
+# Read data from the JSON file
 with open('datasets/sample_dataset1.json', 'r') as file:
-    data = json.load(file)
+    edge_servers_data = json.load(file)
 
-# Extract the relevant attributes and relationships
-flat_data_pred = pd.json_normalize(data['Service'])
+# List to store features for prediction
+features_for_prediction = []
 
-# Drop unnecessary columns
-columns_to_drop_pred = ["attributes.label", "relationships.application.class", "attributes._available", "relationships.server.class", "attributes.image_digest"]
-flat_data_pred.drop(columns=columns_to_drop_pred, inplace=True)
+# Extracting cpu_demand and memory_demand for each EdgeServer
+for edge_server in edge_servers_data["EdgeServer"]:
+    cpu_demand = edge_server["attributes"]["cpu_demand"]
+    memory_demand = edge_server["attributes"]["memory_demand"]
+    maximum_usage_cpus = edge_server["attributes"]["maximum_usage_cpus"]
+    maximum_usage_memory = edge_server["attributes"]["maximum_usage_memory"]
+    random_sample_usage_cpus = edge_server["attributes"]["random_sample_usage_cpus"]
+    assigned_memory = edge_server["attributes"]["assigned_memory"]
 
-#Fill missing values with mean
-flat_data_pred.fillna(flat_data_pred.mean(), inplace=True)
+    # Creating a dictionary for each EdgeServer's features
+    features = {
+                "cpu_demand": cpu_demand,
+                "memory_demand": memory_demand,
+                "maximum_usage_cpus": maximum_usage_cpus,
+                "maximum_usage_memory": maximum_usage_memory,
+                "random_sample_usage_cpus": random_sample_usage_cpus,
+                "assigned_memory": assigned_memory
+            }
+
+    # Appending the features dictionary to the list
+    features_for_prediction.append(features)
+
+# Extract numerical values from the dictionaries
+numerical_features = [[entry["cpu_demand"], entry["memory_demand"], entry["maximum_usage_cpus"], entry["maximum_usage_memory"],
+                        entry["random_sample_usage_cpus"], entry["assigned_memory"]] for entry in features_for_prediction]
+
+# Convert the list of lists to a NumPy array
+numerical_features_array = np.array(numerical_features)
 
 #Scale the features 
 scaler = StandardScaler()
-scaled_features_pred = scaler.fit_transform(flat_data_pred)
+scaled_features_pred = scaler.fit_transform(numerical_features_array)
 
 #Reshape the input features to add a third dimension for time steps
 X_pred_reshaped = tf.reshape(scaled_features_pred, (scaled_features_pred.shape[0], 1, scaled_features_pred.shape[1]))
