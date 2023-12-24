@@ -29,11 +29,16 @@ columns_to_drop = ['time', 'instance_events_type', 'scheduling_class', 'priority
                    'constraint', 'collections_events_type', 'user', 'collection_name', 
                    'collection_logical_name', 'start_after_collection_ids', 'vertical_scaling', 
                    'scheduler', 'cpu_usage_distribution', 'tail_cpu_usage_distribution', 
-                   'cluster', 'event', 'failed', 'random_sample_usage_memory']
+                   'cluster', 'event', 'failed', 'random_sample_usage_memory', 'collection_id',
+                   'alloc_collection_id', 'collection_type','start_time', 'end_time', 'sample_rate'
+                   , 'cycles_per_instruction', 'memory_accesses_per_instruction', 'page_cache_memory',
+                   'instance_index',	'machine_id',]
 
 
 # Drop the specified columns
 df.drop(columns=columns_to_drop, inplace=True)
+df = df.drop(df.columns[df.columns.str.contains('Unnamed', case=False, regex=True)][0], axis=1)
+
 #Function to convert string representation of arrays to actual arrays
 
 # Check for empty values
@@ -57,17 +62,21 @@ correlation_matrix = df.corr()
 print(correlation_matrix)
 # Feature Scaling
 scaler = StandardScaler()
-scaled_features = scaler.fit_transform(df[['collection_id', 'alloc_collection_id',
-                                           'collection_type', 'instance_index',	'machine_id', 'resource_request_cpus', 'resource_request_memory',
-                                            'start_time',	'end_time',	 'maximum_usage_cpus',
+scaled_features = scaler.fit_transform(df[[  'resource_request_cpus', 'resource_request_memory',
+                                            'maximum_usage_cpus',
                                             'maximum_usage_memory', 
-                                            'random_sample_usage_cpus', 'assigned_memory', 'page_cache_memory', 'cycles_per_instruction',
-                                            'memory_accesses_per_instruction',	'sample_rate'
+                                            'random_sample_usage_cpus', 'assigned_memory'
 ]])
 
 # Labels
 labels = df[['average_usage_cpus', 'average_usage_memory']]
 print(df.head)
+
+# Calculate the correlation matrix
+correlation_matrix = df.corr()
+
+# Display the correlation matrix
+print(correlation_matrix)
 
 # Split the dataset into training and testing sets
 X_train, X_test, y_train, y_test = train_test_split(scaled_features, labels, test_size=0.2, random_state=42)
@@ -99,11 +108,13 @@ X_test_reshaped = tf.reshape(X_test, (X_test.shape[0], 1, X_test.shape[1]))
 #    tf.keras.layers.Dense(units=2)
 #])  
 
+
 model = tf.keras.Sequential([
     tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units=64, return_sequences=True), input_shape=(1, X_train.shape[1])),
     tf.keras.layers.GRU(units=32, activation='relu'),
     tf.keras.layers.Dense(units=2)
 ])
+
 
 # Compile the model
 model.compile(optimizer='adam', loss='mean_squared_error')
