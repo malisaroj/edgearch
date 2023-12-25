@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pandas import json_normalize
 import ast
+from sklearn.preprocessing import PolynomialFeatures
 
 # Load your dataset (assuming the dataset is in a pandas DataFrame)
 df = pd.read_csv("datasets/borg_traces_data.csv")
@@ -32,14 +33,23 @@ columns_to_drop = ['time', 'instance_events_type', 'scheduling_class', 'priority
                    'cluster', 'event', 'failed', 'random_sample_usage_memory', 'collection_id',
                    'alloc_collection_id', 'collection_type','start_time', 'end_time', 'sample_rate'
                    , 'cycles_per_instruction', 'memory_accesses_per_instruction', 'page_cache_memory',
-                   'instance_index',	'machine_id',]
+                   'instance_index', 'machine_id',]
 
 
 # Drop the specified columns
 df.drop(columns=columns_to_drop, inplace=True)
 df = df.drop(df.columns[df.columns.str.contains('Unnamed', case=False, regex=True)][0], axis=1)
 
-#Function to convert string representation of arrays to actual arrays
+# Adding more feature engineering as needed based on  data
+# Cross-feature interactions
+df['interaction_feature'] = df['maximum_usage_cpus'] * df['random_sample_usage_cpus']
+
+# Polynomial features
+poly = PolynomialFeatures(degree=2, include_bias=False)
+poly_features = poly.fit_transform(df[['maximum_usage_cpus', 'random_sample_usage_cpus']])
+poly_feature_names = [f"poly_{name}" for name in poly.get_feature_names_out(['maximum_usage_cpus', 'random_sample_usage_cpus'])]
+poly_df = pd.DataFrame(poly_features, columns=poly_feature_names)
+df = pd.concat([df, poly_df], axis=1)
 
 # Check for empty values
 empty_values = df.isnull().sum()
@@ -60,12 +70,13 @@ print("\nUpdated Zero Values:\n", updated_zero_values)
 
 correlation_matrix = df.corr()
 print(correlation_matrix)
+
 # Feature Scaling
 scaler = StandardScaler()
-scaled_features = scaler.fit_transform(df[[  'resource_request_cpus', 'resource_request_memory',
-                                            'maximum_usage_cpus',
-                                            'maximum_usage_memory', 
-                                            'random_sample_usage_cpus', 'assigned_memory'
+scaled_features = scaler.fit_transform(df[[  'resource_request_cpus', 'resource_request_memory',  'poly_maximum_usage_cpus random_sample_usage_cpus',
+                                            'maximum_usage_cpus',  'poly_random_sample_usage_cpus', 'poly_random_sample_usage_cpus^2',
+                                            'maximum_usage_memory',  'interaction_feature', 'poly_maximum_usage_cpus^2',
+                                            'random_sample_usage_cpus', 'assigned_memory',  'poly_maximum_usage_cpus',
 ]])
 
 # Labels

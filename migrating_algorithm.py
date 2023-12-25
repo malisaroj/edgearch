@@ -5,6 +5,8 @@ import tensorflow as tf
 import json 
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
+from sklearn.preprocessing import PolynomialFeatures
+
 
 # Read data from the JSON file
 with open('datasets/sample_dataset1.json', 'r') as file:
@@ -12,6 +14,8 @@ with open('datasets/sample_dataset1.json', 'r') as file:
 
 # List to store features for prediction
 features_for_prediction = []
+
+
 
 # Extracting cpu_demand and memory_demand for each EdgeServer
 for edge_server in edge_servers_data["EdgeServer"]:
@@ -35,16 +39,24 @@ for edge_server in edge_servers_data["EdgeServer"]:
     # Appending the features dictionary to the list
     features_for_prediction.append(features)
 
-# Extract numerical values from the dictionaries
-numerical_features = [[entry["cpu_demand"], entry["memory_demand"], entry["maximum_usage_cpus"], entry["maximum_usage_memory"],
-                        entry["random_sample_usage_cpus"], entry["assigned_memory"]] for entry in features_for_prediction]
+# Convert the list of dictionaries to a Pandas DataFrame
+df_for_prediction = pd.DataFrame(features_for_prediction)
 
-# Convert the list of lists to a NumPy array
-numerical_features_array = np.array(numerical_features)
+# Adding more feature engineering as needed based on  data
+# Cross-feature interactions
+df_for_prediction['interaction_feature'] = df_for_prediction['maximum_usage_cpus'] * df_for_prediction['random_sample_usage_cpus']
+
+# Polynomial features
+poly = PolynomialFeatures(degree=2, include_bias=False)
+poly_features = poly.fit_transform(df_for_prediction[['maximum_usage_cpus', 'random_sample_usage_cpus']])
+poly_feature_names = [f"poly_{name}" for name in poly.get_feature_names_out(['maximum_usage_cpus', 'random_sample_usage_cpus'])]
+poly_df = pd.DataFrame(poly_features, columns=poly_feature_names)
+df_for_prediction = pd.concat([df_for_prediction, poly_df], axis=1)
+
 
 #Scale the features 
 scaler = StandardScaler()
-scaled_features_pred = scaler.fit_transform(numerical_features_array)
+scaled_features_pred = scaler.fit_transform(df_for_prediction)
 
 #Reshape the input features to add a third dimension for time steps
 X_pred_reshaped = tf.reshape(scaled_features_pred, (scaled_features_pred.shape[0], 1, scaled_features_pred.shape[1]))
