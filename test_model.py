@@ -31,6 +31,13 @@ for column in columns_to_normalize:
 # Cross-feature interactions
 df['interaction_feature'] = df['maximum_usage_cpus'] * df['random_sample_usage_cpus']
 
+# Creating lag features for memory_demand
+df['memory_demand_lag_1'] = df['memory_demand'].shift(1)
+
+# Creating rolling window statistics for memory_demand
+df['memory_demand_rolling_mean'] = df['memory_demand'].rolling(window=3).mean()
+df['memory_demand_rolling_std'] = df['memory_demand'].rolling(window=3).std()
+
 # Polynomial features
 poly = PolynomialFeatures(degree=2, include_bias=False)
 poly_features = poly.fit_transform(df[['maximum_usage_cpus', 'random_sample_usage_cpus']])
@@ -41,10 +48,10 @@ df = pd.concat([df, poly_df], axis=1)
 # Extract the relevant features for prediction
 # Feature Scaling
 scaler = StandardScaler()
-features_for_prediction = scaler.fit_transform(df[[ 'resource_request_cpus', 'resource_request_memory',  'poly_maximum_usage_cpus random_sample_usage_cpus',
-                                            'maximum_usage_cpus',  'poly_random_sample_usage_cpus', 'poly_random_sample_usage_cpus^2',
-                                            'maximum_usage_memory',  'interaction_feature', 'poly_maximum_usage_cpus^2',
-                                            'random_sample_usage_cpus', 'assigned_memory',  'poly_maximum_usage_cpus',
+features_for_prediction = scaler.fit_transform(df[[ 'resource_request_cpus', 'resource_request_memory',  'poly_maximum_usage_cpus random_sample_usage_cpus', 
+                                            'maximum_usage_cpus',  'poly_random_sample_usage_cpus', 'poly_random_sample_usage_cpus^2', 'memory_demand_rolling_mean',
+                                            'maximum_usage_memory',  'interaction_feature', 'poly_maximum_usage_cpus^2', 'memory_demand_lag_1',
+                                            'random_sample_usage_cpus', 'assigned_memory',  'poly_maximum_usage_cpus', 'memory_demand_rolling_std',
 ]])
 
 # Reshape the input features if needed

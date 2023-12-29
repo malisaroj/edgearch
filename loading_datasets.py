@@ -2,14 +2,15 @@
 from edge_sim_py import *
 from placement_algorithm import cool_resource_management_policy, stopping_criterion
 from utils import parsing_simulation_logs, visualizing_dataset
+from migrating_algorithm import offloading_algorithm
 
 # Instantiating the simulator
 simulator = Simulator(
     dump_interval=5,
-    tick_unit="minutes",
+    tick_unit="seconds",
     tick_duration=1,
     stopping_criterion=stopping_criterion,
-    resource_management_algorithm=cool_resource_management_policy,
+    resource_management_algorithm=offloading_algorithm,
 )
 
 # Loading the dataset file from the external JSON filec
@@ -31,3 +32,6 @@ for service in Service.all():
 
 #Analyzing the simulation results
 #parsing_simulation_logs()
+    
+# Executing the simulation
+simulator.run_model()
