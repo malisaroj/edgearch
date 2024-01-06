@@ -8,6 +8,10 @@ import seaborn as sns
 from pandas import json_normalize
 import ast
 from sklearn.preprocessing import PolynomialFeatures
+import datetime
+from pathlib import Path
+import os
+
 
 # Load your dataset (assuming the dataset is in a pandas DataFrame)
 df = pd.read_csv("datasets/borg_traces_data.csv")
@@ -45,18 +49,11 @@ df = df.drop(df.columns[df.columns.str.contains('Unnamed', case=False, regex=Tru
 df['interaction_feature'] = df['maximum_usage_cpus'] * df['random_sample_usage_cpus']
 
 # Creating lag features for memory_demand
-df['memory_demand_lag_1'] = df['memory_demand'].shift(1)
+df['memory_demand_lag_1'] = df['resource_request_memory'].shift(1)
 
 # Creating rolling window statistics for memory_demand
-df['memory_demand_rolling_mean'] = df['memory_demand'].rolling(window=3).mean()
-df['memory_demand_rolling_std'] = df['memory_demand'].rolling(window=3).std()
-
-# Polynomial features
-poly = PolynomialFeatures(degree=2, include_bias=False)
-poly_features = poly.fit_transform(df[['maximum_usage_cpus', 'random_sample_usage_cpus']])
-poly_feature_names = [f"poly_{name}" for name in poly.get_feature_names_out(['maximum_usage_cpus', 'random_sample_usage_cpus'])]
-poly_df = pd.DataFrame(poly_features, columns=poly_feature_names)
-df = pd.concat([df, poly_df], axis=1)
+df['memory_demand_rolling_mean'] = df['resource_request_memory'].rolling(window=3).mean()
+df['memory_demand_rolling_std'] = df['resource_request_memory'].rolling(window=3).std()
 
 # Check for empty values
 empty_values = df.isnull().sum()
@@ -80,10 +77,10 @@ print(correlation_matrix)
 
 # Feature Scaling
 scaler = StandardScaler()
-scaled_features = scaler.fit_transform(df[[  'resource_request_cpus', 'resource_request_memory',  'poly_maximum_usage_cpus random_sample_usage_cpus',
-                                            'maximum_usage_cpus',  'poly_random_sample_usage_cpus', 'poly_random_sample_usage_cpus^2', 'memory_demand_lag_1',
-                                            'maximum_usage_memory',  'interaction_feature', 'poly_maximum_usage_cpus^2', 'memory_demand_rolling_mean',
-                                            'random_sample_usage_cpus', 'assigned_memory',  'poly_maximum_usage_cpus', 'memory_demand_rolling_std',
+scaled_features = scaler.fit_transform(df[[  'resource_request_cpus', 'resource_request_memory', 
+                                            'maximum_usage_cpus',   'memory_demand_lag_1',
+                                            'maximum_usage_memory',  'interaction_feature',  'memory_demand_rolling_mean',
+                                            'random_sample_usage_cpus', 'assigned_memory',   'memory_demand_rolling_std',
 ]])
 
 # Labels
@@ -133,9 +130,14 @@ model = tf.keras.Sequential([
     tf.keras.layers.Dense(units=2)
 ])
 
+# Define the TensorBoard callback
+log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
 
 # Compile the model
 model.compile(optimizer='adam', loss='mean_squared_error')
+# Compile the model with the TensorBoard callback
+model.compile(optimizer='adam', loss='mean_squared_error', metrics=['accuracy'])
 
 # Print the model summary
 model.summary()
@@ -147,10 +149,28 @@ model.summary()
 loss = model.evaluate(X_test_reshaped, y_test)
 print("Test Loss:", loss)
 
-model.save("hybrid_model.h5")
+# Save the trained model after the training is completed
+model_save_path = Path(".cache") / "trained_model"
+
+# Check if the model file already exists, and replace it if necessary
+if model_save_path.exists():
+    print("A trained model already exists. Replacing it.")
+    try:
+        os.remove(model_save_path)
+    except PermissionError as e:
+        print(f"Error removing existing model file: {e}")
+        # Handle the error as needed, e.g., by renaming the existing file
+        # or prompting the user for action.
+        # Example: os.rename(model_save_path, 'backup_model')
+else:
+    print("No existing model file found.")
+
+# Save the new model
+model.save(os.path.join(model_save_path, "trained_model.h5"))
 
 # Train the model and collect the training history
-history = model.fit(X_train_reshaped, y_train, epochs=10, batch_size=32, validation_data=(X_test_reshaped, y_test))
+history = model.fit(X_train_reshaped, y_train, epochs=10, batch_size=32,
+                    validation_data=(X_test_reshaped, y_test), callbacks=[tensorboard_callback])
 
 # Plot both training and validation loss over epochs
 plt.plot(history.history['loss'], label='Training Loss')
