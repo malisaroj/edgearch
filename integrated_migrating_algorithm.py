@@ -15,8 +15,12 @@ U_th = 80  # Upper workload threshold triggering scaling out
 L_th = 20  # Lower workload threshold triggering scaling in
 Delta_N_out = 2  # Number of resources to add during scaling out
 Delta_N_in = 1  # Number of resources to remove during scaling in
-T_th = 0.5  # Threshold for local processing in the task offloading algorithm
+T_th = 0  # Threshold for local processing in the task offloading algorithm
 min_number_of_resources = 5
+
+
+# Initialize migration_counts
+migration_counts = {'hybrid': 0}
 
 def measure_and_update_workload(parameters):
     current_cpu_workload = 0
@@ -91,6 +95,8 @@ def PredictResourceRequirements():
     poly_df = pd.DataFrame(poly_features, columns=poly_feature_names)
     df_for_prediction = pd.concat([df_for_prediction, poly_df], axis=1)
 
+    df_for_prediction.fillna(df_for_prediction.mean(), inplace=True)
+
     # Scale the features 
     scaler = StandardScaler()
     scaled_features_pred = scaler.fit_transform(df_for_prediction)
@@ -108,26 +114,30 @@ def PredictResourceRequirements():
     # Make predictions on the new data
     predictions_pred = model.predict(X_pred_reshaped)
 
-    # Clip negative values to 0
-    predictions_pred = np.clip(predictions_pred, a_min=0, a_max=None)
-
     # Reshape the predictions to match the original shape of labels
     predictions_pred = np.reshape(predictions_pred, (predictions_pred.shape[0], 2))
 
     # Convert the Numpy arrays back to a Pandas DataFrame for better analysis or comparision
     predictions_pred_df = pd.DataFrame(predictions_pred, columns=['predicted_cpus', 'predicted_memory'])
+
     # Combine predictions with edge server information
+
     edge_servers_info = pd.DataFrame(
-        {
-            "EdgeServer": [server for server in EdgeServer.all()],
-            "predicted_cpus": predictions_pred_df['predicted_cpus'],
-            "predicted_memory": predictions_pred_df['predicted_memory'],
-        }
+    {
+        "EdgeServer": [server for server in EdgeServer.all()],
+        "predicted_cpus": predictions_pred_df['predicted_cpus'],
+        "predicted_memory": predictions_pred_df['predicted_memory'],
+    }
     )
 
+    # Set "EdgeServer" as the index
+    edge_servers_info.set_index("EdgeServer", inplace=True)
+
+    # Add the decision_factor column
+    edge_servers_info['decision_factor'] = np.maximum(edge_servers_info['predicted_cpus'], edge_servers_info['predicted_memory'])
+
     # Determine the decision factor (Use the geometric mean to account for both CPU and memory utilization in a multiplicative manner.)
-    edge_servers_info['decision_factor'] = np.sqrt(edge_servers_info['predicted_cpus'] * edge_servers_info['predicted_memory'])
-    print(edge_servers_info['decision_factor'])
+    #edge_servers_info['decision_factor'] = np.sqrt(edge_servers_info['predicted_cpus'] * edge_servers_info['predicted_memory'])
 
     return edge_servers_info['decision_factor']
 
@@ -161,22 +171,33 @@ def integrated_offloading_and_scaling_algorithm(parameters):
     sorted_edge_servers_info = sort_edge_servers_based_on_decision_factors(decision_factors)
 
     for service in Service.all():
-        P_decision = decision_factors[service.server] # Retrieve decision factor for the current service
-        offloading_action = OffloadingDecision(P_decision, T_th)
+        print(f"Service: {service}, Server: {service.server}")
+        offloading_action = None  # Initialize offloading_action variable
 
-        if offloading_action == "Process Locally":
-            # Process the service locally
-            print(f"[STEP {parameters['current_step']}] Processing {service} locally on {service.server}")
-        elif offloading_action == "Migrate":
-            for edge_server_info in sorted_edge_servers_info.itertuples():
-                edge_server = edge_server_info.EdgeServer
-                if edge_server.has_capacity_to_host(service=service):
-                    if service.server != edge_server:
-                        # Provision service to edge server
-                        ProvisionService(service, edge_server)
-                        migration_counts['hybrid'] += 1
-                        print(f"[STEP {parameters['current_step']}] Migrating {service} from {service.server} to {edge_server}")
-                        break
+        if service.server is not None:
+            #P_decision = decision_factors[service.server]  # Retrieve decision factor for the current service
+            P_decision = decision_factors.loc[service.server]
+
+            offloading_action = OffloadingDecision(P_decision, T_th)
+
+            if offloading_action == "Process Locally":
+                # Process the service locally
+                print(f"[STEP {parameters['current_step']}] Processing {service} locally on {service.server}")
+            elif offloading_action == "Migrate":
+                for edge_server_info in sorted_edge_servers_info.itertuples():
+                    edge_server = edge_server_info.EdgeServer
+                    if edge_server.has_capacity_to_host(service=service):
+                        if service.server != edge_server:
+                            # Provision service to edge server
+                            ProvisionService(service, edge_server)
+                            migration_counts['hybrid'] += 1
+                            print(f"[STEP {parameters['current_step']}] Migrating {service} from {service.server} to {edge_server}")
+                            break
+
+
+        # Handle the case where offloading_action is still None
+        if offloading_action is None:
+            print(f"[WARNING] offloading_action is not assigned. Skipping decision for {service}.")
 
 
 # Function to make scaling decisions based on workload metrics and thresholds
