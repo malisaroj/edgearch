@@ -5,11 +5,14 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 from pandas import json_normalize
 import ast
+from pathlib import Path
 from sklearn.preprocessing import PolynomialFeatures
 
 
 # Load the saved model
-model = tf.keras.models.load_model("hybrid_model.h5")
+model_save_path = Path(".cache") / "trained_model" 
+model = tf.keras.models.load_model(model_save_path)
+#model = tf.keras.models.load_model("hybrid_model.h5")
 
 # Load your dataset (assuming the dataset is in a pandas DataFrame)
 df = pd.read_csv("datasets/borg_traces_data.csv")
@@ -32,13 +35,13 @@ for column in columns_to_normalize:
 df['interaction_feature'] = df['maximum_usage_cpus'] * df['random_sample_usage_cpus']
 
 # Creating lag features for memory_demand
-df['memory_demand_lag_1'] = df['memory_demand'].shift(1)
+df['memory_demand_lag_1'] = df['resource_request_memory'].shift(1)
 
 # Creating rolling window statistics for memory_demand
-df['memory_demand_rolling_mean'] = df['memory_demand'].rolling(window=3).mean()
-df['memory_demand_rolling_std'] = df['memory_demand'].rolling(window=3).std()
+df['memory_demand_rolling_mean'] = df['resource_request_memory'].rolling(window=3).mean()
+df['memory_demand_rolling_std'] = df['resource_request_memory'].rolling(window=3).std()
 
-# Polynomial features
+# Reshape the input features if needed# Polynomial features
 poly = PolynomialFeatures(degree=2, include_bias=False)
 poly_features = poly.fit_transform(df[['maximum_usage_cpus', 'random_sample_usage_cpus']])
 poly_feature_names = [f"poly_{name}" for name in poly.get_feature_names_out(['maximum_usage_cpus', 'random_sample_usage_cpus'])]
@@ -54,7 +57,6 @@ features_for_prediction = scaler.fit_transform(df[[ 'resource_request_cpus', 're
                                             'random_sample_usage_cpus', 'assigned_memory',  'poly_maximum_usage_cpus', 'memory_demand_rolling_std',
 ]])
 
-# Reshape the input features if needed
 features_for_prediction_reshaped = tf.reshape(features_for_prediction, 
                                               (features_for_prediction.shape[0], 1, features_for_prediction.shape[1]))
 
@@ -63,6 +65,9 @@ num_predictions = 200
 
 # Make predictions for the first 'num_predictions' rows
 predictions = model.predict(features_for_prediction_reshaped[:num_predictions])
+
+# Clip negative predictions to 0
+predictions = np.maximum(predictions, 0)
 
 # Assuming 'predictions' is a NumPy array, you can use it as needed
 print("Predictions:\n", predictions)

@@ -7,10 +7,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pandas import json_normalize
 import ast
-from sklearn.preprocessing import PolynomialFeatures
 import datetime
 from pathlib import Path
 import os
+from sklearn.preprocessing import PolynomialFeatures
 
 
 # Load your dataset (assuming the dataset is in a pandas DataFrame)
@@ -55,6 +55,13 @@ df['memory_demand_lag_1'] = df['resource_request_memory'].shift(1)
 df['memory_demand_rolling_mean'] = df['resource_request_memory'].rolling(window=3).mean()
 df['memory_demand_rolling_std'] = df['resource_request_memory'].rolling(window=3).std()
 
+# Polynomial features
+poly = PolynomialFeatures(degree=2, include_bias=False)
+poly_features = poly.fit_transform(df[['maximum_usage_cpus', 'random_sample_usage_cpus']])
+poly_feature_names = [f"poly_{name}" for name in poly.get_feature_names_out(['maximum_usage_cpus', 'random_sample_usage_cpus'])]
+poly_df = pd.DataFrame(poly_features, columns=poly_feature_names)
+df = pd.concat([df, poly_df], axis=1)
+
 # Check for empty values
 empty_values = df.isnull().sum()
 print("Empty Values:\n", empty_values)
@@ -75,12 +82,13 @@ print("\nUpdated Zero Values:\n", updated_zero_values)
 correlation_matrix = df.corr()
 print(correlation_matrix)
 
+# Extract the relevant features for prediction
 # Feature Scaling
 scaler = StandardScaler()
-scaled_features = scaler.fit_transform(df[[  'resource_request_cpus', 'resource_request_memory', 
-                                            'maximum_usage_cpus',   'memory_demand_lag_1',
-                                            'maximum_usage_memory',  'interaction_feature',  'memory_demand_rolling_mean',
-                                            'random_sample_usage_cpus', 'assigned_memory',   'memory_demand_rolling_std',
+scaled_features = scaler.fit_transform(df[[ 'resource_request_cpus', 'resource_request_memory',  'poly_maximum_usage_cpus random_sample_usage_cpus', 
+                                            'maximum_usage_cpus',  'poly_random_sample_usage_cpus', 'poly_random_sample_usage_cpus^2', 'memory_demand_rolling_mean',
+                                            'maximum_usage_memory',  'interaction_feature', 'poly_maximum_usage_cpus^2', 'memory_demand_lag_1',
+                                            'random_sample_usage_cpus', 'assigned_memory',  'poly_maximum_usage_cpus', 'memory_demand_rolling_std',
 ]])
 
 # Labels
@@ -127,7 +135,8 @@ X_test_reshaped = tf.reshape(X_test, (X_test.shape[0], 1, X_test.shape[1]))
 model = tf.keras.Sequential([
     tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units=64, return_sequences=True), input_shape=(1, X_train.shape[1])),
     tf.keras.layers.GRU(units=32, activation='relu'),
-    tf.keras.layers.Dense(units=2)
+    tf.keras.layers.Dropout(0.5),  # Add dropout layer
+    tf.keras.layers.Dense(units=2, activation='relu')  # Use ReLU activation for both CPU and memory predictions
 ])
 
 # Define the TensorBoard callback
@@ -135,9 +144,9 @@ log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
 
 # Compile the model
-model.compile(optimizer='adam', loss='mean_squared_error')
+# model.compile(optimizer='adam', loss='mean_squared_error')
 # Compile the model with the TensorBoard callback
-model.compile(optimizer='adam', loss='mean_squared_error', metrics=['accuracy'])
+model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mae', tf.keras.metrics.RootMeanSquaredError(name='rmse')])
 
 # Print the model summary
 model.summary()
@@ -146,30 +155,40 @@ model.summary()
 #model.fit(X_train_reshaped, y_train, epochs=10, batch_size=32)  # Adjust the number of epochs based on your dataset and problem
 
 # Evaluate the model on the test data
-loss = model.evaluate(X_test_reshaped, y_test)
+loss,  mae, rmse = model.evaluate(X_test_reshaped, y_test)
 print("Test Loss:", loss)
+print("Test MAE:", mae)
+print("Test RMSE:", rmse)
 
 # Save the trained model after the training is completed
 model_save_path = Path(".cache") / "trained_model"
 
-# Check if the model file already exists, and replace it if necessary
+# Check if the model directory already exists, and replace it if necessary
 if model_save_path.exists():
-    print("A trained model already exists. Replacing it.")
+    print("A trained model directory already exists. Replacing it.")
     try:
-        os.remove(model_save_path)
-    except PermissionError as e:
-        print(f"Error removing existing model file: {e}")
-        # Handle the error as needed, e.g., by renaming the existing file
-        # or prompting the user for action.
-        # Example: os.rename(model_save_path, 'backup_model')
+        for file in os.listdir(model_save_path):
+            file_path = os.path.join(model_save_path, file)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    os.rmdir(file_path)
+            except Exception as e:
+                print(f"Error removing existing file/directory: {e}")
+    except Exception as e:
+        print(f"Error accessing the model directory: {e}")
 else:
-    print("No existing model file found.")
+    print("No existing model directory found.")
 
-# Save the new model
-model.save(os.path.join(model_save_path, "trained_model.h5"))
+# Save the new model in the SavedModel format
+try:
+    model.save(model_save_path)
+except Exception as e:
+    print(f"Error saving the model: {e}")
 
 # Train the model and collect the training history
-history = model.fit(X_train_reshaped, y_train, epochs=10, batch_size=32,
+history = model.fit(X_train_reshaped, y_train, epochs=20, batch_size=32,
                     validation_data=(X_test_reshaped, y_test), callbacks=[tensorboard_callback])
 
 # Plot both training and validation loss over epochs
@@ -180,6 +199,3 @@ plt.xlabel('Epochs')
 plt.ylabel('Loss')
 plt.legend()
 plt.show()
-
-# Save the plot
-plt.savefig('training_loss_plot.png')
