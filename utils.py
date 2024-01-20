@@ -1,10 +1,10 @@
-#importing edgesimpy componenets and its built-in libraries networkx, msgpck
-from edge_sim_py import *
-import networkx as nx
-import msgpack
-import matplotlib as plt
-import pandas as pd
+# utils.py
 import os
+import pandas as pd
+import msgpack
+import matplotlib.pyplot as plt
+import networkx as nx
+from edge_sim_py import *
 
 #Visualizing the dataset
 def visualizing_dataset():
@@ -40,50 +40,52 @@ def visualizing_dataset():
         font_color="whitesmoke"
     )    
 
-def parsing_simulation_logs():
+def set_pandas_display_options():
     pd.options.display.max_columns = 1000
     pd.options.display.max_rows = 5000
     pd.options.display.max_colwidth = 199
     pd.options.display.width = 1000
 
-    def highlight_rows(dataframe):
-        df = dataframe.copy()
-        mask = df['Time Step'] % 2 == 0
-        df.loc[mask, :] = 'background-color: #222222; color: white'
-        df.loc[~mask, :] = 'background-color: #333333; color: white'
+def highlight_rows(dataframe):
+    df = dataframe.copy()
 
-        return df
-    
-    #Gathering the list of msgpack files in the current directory
-    logs_directory = f"{os.getcwd()}/logs"
+    mask = df['Time Step'] % 2 == 0
+
+    df.loc[mask, :] = 'background-color: #222222; color: white'
+    df.loc[~mask, :] = 'background-color: #333333; color: white'
+
+    return df
+
+def load_datasets(logs_directory):
     dataset_files = [file for file in os.listdir(logs_directory) if ".msgpack" in file]
 
-    #Reading msgpack files found
     datasets = {}
     for file in dataset_files:
-        with open(f"logs/{file}", "rb") as data_file:
+        with open(os.path.join(logs_directory, file), "rb") as data_file:
             datasets[file.replace(".msgpack", "")] = pd.DataFrame(msgpack.unpackb(data_file.read(), strict_map_key=False))
 
-    datasets["EdgeServer"].style.apply(highlight_rows, axis=None)
-    datasets["User"].style.apply(highlight_rows, axis=None)
+    return datasets
 
-    print("=== User Mobility Traces ===")
+def display_user_mobility_traces(datasets):
+    print("=== USER MOBILITY TRACES ===")
     users_coordinates = dict(datasets["User"].groupby('Object')['Coordinates'].apply(list))
     for user, mobility_logs in users_coordinates.items():
         print(f"{user}. Mobility Logs: {mobility_logs}")
 
     print("\n\n")
 
-    print("=== Edge Servers' Power Consumption ===")
-    edge_servers_power_consumption = dict(datasets["EdgeServer"].groupby('Object')['Power Consumption'])
+def plot_edge_servers_power_consumption(datasets):
+    plt.figure(figsize=(10, 6))
+    print("=== EDGE SERVERS' POWER CONSUMPTION ===")
+    edge_servers_power_consumption = dict(datasets["EdgeServer"].groupby('Object')['Power Consumption'].apply(list))
     for edge_server, power_consumption in edge_servers_power_consumption.items():
-        print(f"{edge_server}. Power Consumption Per Step: {power_consumption}")
+        print(f"{edge_server}. Power Consumption per Step: {power_consumption}")
 
-    #Defining the data fram columns that will be exhibited
-    properties = ['Coordinates', 'CPU Demand', 'RAM Demand', 'Disk Demand', 'Services']
-    columns = ['Time Step', 'Instance ID'] + properties
+        plt.plot(power_consumption, label=edge_server)
 
-    dataframe = datasets["EdgeServer"].filter(items=columns)
-    dataframe
-
-
+    plt.title("Edge Servers' Power Consumption")
+    plt.xlabel("Step")
+    plt.ylabel("Power Consumption")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
