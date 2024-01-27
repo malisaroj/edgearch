@@ -1,6 +1,5 @@
 #Importing Edgesimpy components
 from edge_sim_py import *
-import networkx as nx
 import numpy as np
 import tensorflow as tf
 import json 
@@ -8,6 +7,13 @@ from sklearn.preprocessing import StandardScaler
 import pandas as pd
 from sklearn.preprocessing import PolynomialFeatures
 from pathlib import Path
+import matplotlib.pyplot as plt
+import msgpack
+import os
+from utils import set_pandas_display_options, highlight_rows, load_datasets, display_user_mobility_traces, plot_edge_servers_power_consumption
+
+# Set Pandas display options
+set_pandas_display_options()
 
 # Placeholder values
 initial_number_of_resources = 10
@@ -108,9 +114,6 @@ def PredictResourceRequirements():
     model_save_path = Path(".cache") / "trained_model" 
     model = tf.keras.models.load_model(model_save_path)
 
-    # Show the model architecture
-    model.summary()
-
     # Make predictions on the new data
     predictions_pred = model.predict(X_pred_reshaped)
 
@@ -189,7 +192,7 @@ def integrated_offloading_and_scaling_algorithm(parameters):
                     if edge_server.has_capacity_to_host(service=service):
                         if service.server != edge_server:
                             # Provision service to edge server
-                            ProvisionService(service, edge_server)
+                            service.provision(target_server=edge_server)
                             migration_counts['hybrid'] += 1
                             print(f"[STEP {parameters['current_step']}] Migrating {service} from {service.server} to {edge_server}")
                             break
@@ -227,10 +230,6 @@ def OffloadingDecision(P_decision, T_th):
     else:
         return "Migrate"
 
-# Function to provision a service to an edge server
-def ProvisionService(service, edge_server):
-    service.provision(target_server=edge_server)
-
 def stopping_criterion(model: object):
     # Defining a variable that will help us to count the number of services successfully provisioned within the infrastructure
     provisioned_services = 0
@@ -251,12 +250,22 @@ def stopping_criterion(model: object):
 simulator_hybrid = Simulator(
     tick_duration=1,
     tick_unit="seconds",
-    stopping_criterion=stopping_criterion,
+    stopping_criterion=lambda model: model.schedule.steps == 10,
     resource_management_algorithm=integrated_offloading_and_scaling_algorithm,
 )
 
-# Loading a sample dataset from GitHub for each simulator
+# Loading a sample dataset from datasets for each simulator
 simulator_hybrid.initialize(input_file="datasets/sample_dataset1.json")
 
 # Executing the simulations
 simulator_hybrid.run_model()
+
+# Gathering the list of msgpack files in the current directory
+logs_directory = f"{os.getcwd()}/logs"
+datasets = load_datasets(logs_directory)
+
+# Display user mobility traces
+display_user_mobility_traces(datasets)
+
+# Plot edge servers' power consumption
+plot_edge_servers_power_consumption(datasets)
