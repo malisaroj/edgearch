@@ -34,7 +34,7 @@ def measure_and_update_workload(parameters):
             current_cpu_workload += service.cpu_demand 
             current_memory_workload += service.memory_demand
 
-    # Combine CPU and memory workloads using a weighted sum (you can adjust the weights)
+    # Combine CPU and memory workloads using a weighted sum
     combined_workload = 0.7 * current_cpu_workload + 0.3 * current_memory_workload
 
     parameters['current_workload'] = combined_workload
@@ -43,7 +43,6 @@ def measure_and_update_workload(parameters):
 
 def PredictResourceRequirements():
 
-    # Let's iterate over the list of services using the 'all()' helper method
     print("\n\n")
 
     # Read data from the JSON file
@@ -238,7 +237,7 @@ def stopping_criterion(model: object):
     return provisioned_services == Service.count()
 
 # Creating Simulator objects for each algorithm
-simulator_hybrid = Simulator(
+simulator = Simulator(
     tick_duration=1,
     tick_unit="seconds",
     stopping_criterion=stopping_criterion,
@@ -246,10 +245,10 @@ simulator_hybrid = Simulator(
 )
 
 # Loading a sample dataset from datasets for each simulator
-simulator_hybrid.initialize(input_file="datasets/sample_dataset2.json")
+simulator.initialize(input_file="datasets/sample_dataset2.json")
 
 # Executing the simulations
-simulator_hybrid.run_model()
+simulator.run_model()
 
 # Gathering the list of msgpack files in the current directory
 logs_directory = f"{os.getcwd()}/logs"

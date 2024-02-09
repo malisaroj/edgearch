@@ -101,11 +101,11 @@ def hybrid_offloading_algorithm(parameters):
     df_for_prediction['interaction_feature'] = df_for_prediction['maximum_usage_cpus'] * df_for_prediction['random_sample_usage_cpus']
 
     # Creating lag features for memory_demand
-    #df_for_prediction['memory_demand_lag_1'] = df_for_prediction['memory_demand'].shift(1)
+    df_for_prediction['memory_demand_lag_1'] = df_for_prediction['memory_demand'].shift(1)
 
     # Creating rolling window statistics for memory_demand
-    #df_for_prediction['memory_demand_rolling_mean'] = df_for_prediction['memory_demand'].rolling(window=3).mean()
-    #df_for_prediction['memory_demand_rolling_std'] = df_for_prediction['memory_demand'].rolling(window=3).std()
+    df_for_prediction['memory_demand_rolling_mean'] = df_for_prediction['memory_demand'].rolling(window=3).mean()
+    df_for_prediction['memory_demand_rolling_std'] = df_for_prediction['memory_demand'].rolling(window=3).std()
 
     # Polynomial features
     poly = PolynomialFeatures(degree=2, include_bias=False)
@@ -122,13 +122,13 @@ def hybrid_offloading_algorithm(parameters):
     X_pred_reshaped = tf.reshape(scaled_features_pred, (scaled_features_pred.shape[0], 1, scaled_features_pred.shape[1]))
 
     #load trained BiLSTM model for task prediction
-    model = tf.keras.models.load_model('hybrid_model.h5')
+    model = tf.keras.models.load_model('trained_model.h5')
 
     # Show the model architecture
     model.summary()
 
     #Make predictions on the new data
-    predictions_pred = model.predict(X_pred_reshaped)
+    predictions_pred = np.abs(model.predict(X_pred_reshaped))
 
     #Reshape the predictions to match the original shape of labels
     predictions_pred = np.reshape(predictions_pred, (predictions_pred.shape[0], 2))
@@ -142,11 +142,18 @@ def hybrid_offloading_algorithm(parameters):
             "EdgeServer": [server for server in EdgeServer.all()],
             "predicted_cpus": predictions_pred_df['predicted_cpus'],
             "predicted_memory": predictions_pred_df['predicted_memory'],
+            "current_cpu": [server.cpu - server.cpu_demand for server in EdgeServer.all()],
+            "current_memory": [server.memory - server.memory_demand for server in EdgeServer.all()]
         }
     )
 
-    # Determine the decision factor (e.g., use the sum of predicted CPUs and memory as the decision factor)
-    edge_servers_info['decision_factor'] = edge_servers_info['predicted_cpus'] + edge_servers_info['predicted_memory']
+    # Calculate decision factor (consider both predicted demands and current resources)
+    edge_servers_info['available_cpu'] = edge_servers_info['current_cpu']
+    edge_servers_info['available_memory'] = edge_servers_info['current_memory']
+    edge_servers_info['decision_factor'] = edge_servers_info['predicted_cpus'] * edge_servers_info['available_cpu'] + \
+                                           edge_servers_info['predicted_memory'] * edge_servers_info['available_memory']
+
+
     print(edge_servers_info['decision_factor'] )
 
     # Sort edge servers based on the decision factor
@@ -198,7 +205,7 @@ simulator = Simulator(
     tick_duration=1,
     tick_unit="seconds",
     stopping_criterion=stopping_criterion,
-    resource_management_algorithm=best_fit_algorithm,
+    resource_management_algorithm=hybrid_offloading_algorithm,
 )
 
 # Loading a sample dataset from GitHub for each simulator
