@@ -7,13 +7,26 @@ import datetime
 from pathlib import Path
 import os
 import numpy as np
+from keras.utils import pad_sequences
 
 # Read the entire dataset
 df = pd.read_csv("preprocessed_data.csv")
 
+df['cpu_usage_distribution'] = df['cpu_usage_distribution'].apply(lambda x: np.fromstring(x.strip('[]'), sep=' '))
+df['tail_cpu_usage_distribution'] = df['tail_cpu_usage_distribution'].apply(lambda x: np.fromstring(x.strip('[]'), sep=' '))
+
+# Padding sequences
+max_seq_length = df['cpu_usage_distribution'].apply(len).max()  # Find the maximum length of sequences
+df['cpu_usage_distribution_padded'] = df['cpu_usage_distribution'].apply(lambda x: pad_sequences([x], maxlen=max_seq_length, padding='post', dtype='float32')[0])
+tail_max_seq_length = df['tail_cpu_usage_distribution'].apply(len).max()  # Find the maximum length of sequences
+df['tail_cpu_usage_distribution_padded'] = df['tail_cpu_usage_distribution'].apply(lambda x: pad_sequences([x], maxlen=tail_max_seq_length, padding='post', dtype='float32')[0])
+
 # Extract the relevant features for prediction
 # Feature Scaling
+
 scaler = StandardScaler()
+df['cpu_usage_distribution_scaled'] = df['cpu_usage_distribution_padded'].apply(lambda x: scaler.fit_transform(x.reshape(-1, 1)))
+df['tail_cpu_usage_distribution_scaled'] = df['tail_cpu_usage_distribution_padded'].apply(lambda x: scaler.fit_transform(x.reshape(-1, 1)))
 
 scaled_features = scaler.fit_transform(df[[ 'resource_request_cpus', 'resource_request_memory',  'poly_maximum_usage_cpus random_sample_usage_cpus', 
                                             'maximum_usage_cpus',  'poly_random_sample_usage_cpus', 'poly_random_sample_usage_cpus^2', 'memory_demand_rolling_mean',
@@ -25,7 +38,41 @@ scaled_features = scaler.fit_transform(df[[ 'resource_request_cpus', 'resource_r
 
 # Labels
 labels = df[['average_usage_cpus', 'average_usage_memory']]
-print(df.head)
+
+# Convert numpy arrays to pandas DataFrames
+scaled_features_df = pd.DataFrame(scaled_features, columns=[
+    'resource_request_cpus', 'resource_request_memory', 'poly_maximum_usage_cpus random_sample_usage_cpus',
+    'maximum_usage_cpus', 'poly_random_sample_usage_cpus', 'poly_random_sample_usage_cpus^2', 'memory_demand_rolling_mean',
+    'maximum_usage_memory', 'interaction_feature', 'poly_maximum_usage_cpus^2', 'memory_demand_lag_1',
+    'random_sample_usage_cpus', 'assigned_memory', 'poly_maximum_usage_cpus', 'memory_demand_rolling_std',
+    'start_hour', 'start_dayofweek', 'duration_seconds', 'sample_rate', 'cycles_per_instruction',
+    'memory_accesses_per_instruction', 'page_cache_memory', 'priority'])
+
+# Confirm dimensions and data types before concatenating scaled features
+print("Scaled Features Dimensions:")
+print("  df['cpu_usage_distribution_scaled']: ", df['cpu_usage_distribution_scaled'].shape)
+print("  df['tail_cpu_usage_distribution_scaled']: ", df['tail_cpu_usage_distribution_scaled'].shape)
+print("  scaled_features_df: ", scaled_features_df.shape)
+
+print("\nData Types:")
+print("  df['cpu_usage_distribution_scaled'].dtype: ", df['cpu_usage_distribution_scaled'].dtype)
+print("  df['tail_cpu_usage_distribution_scaled'].dtype: ", df['tail_cpu_usage_distribution_scaled'].dtype)
+print("  scaled_features_df.dtypes: ", scaled_features_df.dtypes)
+
+# Reshape the data to 2D array
+cpu_usage_reshaped = np.vstack(df['cpu_usage_distribution_scaled']).reshape(-1, max_seq_length)
+
+# Create DataFrame
+cpu_usage_df = pd.DataFrame(cpu_usage_reshaped, columns=[f'cpu_usage_{i}' for i in range(max_seq_length)])
+
+# Reshape the data to 2D array
+tail_cpu_usage_reshaped = np.vstack(df['tail_cpu_usage_distribution_scaled']).reshape(-1, tail_max_seq_length)
+
+# Create DataFrame
+tail_cpu_usage_df = pd.DataFrame(tail_cpu_usage_reshaped, columns=[f'tail_cpu_usage_{i}' for i in range(tail_max_seq_length)])
+
+# Concatenate all DataFrames
+scaled_features_concatenated = pd.concat([cpu_usage_df, tail_cpu_usage_df, scaled_features_df], axis=1)
 
 # Calculate the correlation matrix
 correlation_matrix = df.corr()
@@ -34,7 +81,7 @@ correlation_matrix = df.corr()
 print(correlation_matrix)
 
 # Split the dataset into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(scaled_features, labels, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(scaled_features_concatenated, labels, test_size=0.2, random_state=42)
 
 # Convert NumPy arrays back to TensorFlow tensors
 X_train = tf.constant(X_train, dtype=tf.float32)
