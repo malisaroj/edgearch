@@ -24,10 +24,6 @@ Delta_N_in = 1  # Number of resources to remove during scaling in
 T_th = 0  # Threshold for local processing in the task offloading algorithm
 min_number_of_resources = 5
 
-
-# Initialize migration_counts
-migration_counts = {'hybrid': 0}
-
 def measure_and_update_workload(parameters):
     current_cpu_workload = 0
     current_memory_workload = 0
@@ -38,7 +34,7 @@ def measure_and_update_workload(parameters):
             current_cpu_workload += service.cpu_demand 
             current_memory_workload += service.memory_demand
 
-    # Combine CPU and memory workloads using a weighted sum (you can adjust the weights)
+    # Combine CPU and memory workloads using a weighted sum
     combined_workload = 0.7 * current_cpu_workload + 0.3 * current_memory_workload
 
     parameters['current_workload'] = combined_workload
@@ -46,13 +42,11 @@ def measure_and_update_workload(parameters):
     return parameters['current_workload']
 
 def PredictResourceRequirements():
-    global migration_counts
 
-    # Let's iterate over the list of services using the 'all()' helper method
     print("\n\n")
 
     # Read data from the JSON file
-    with open('datasets/sample_dataset1.json', 'r') as file:
+    with open('datasets/sample_dataset2.json', 'r') as file:
         edge_servers_data = json.load(file)
 
     # List to store features for prediction
@@ -133,22 +127,17 @@ def PredictResourceRequirements():
     }
     )
 
-    # Set "EdgeServer" as the index
-    edge_servers_info.set_index("EdgeServer", inplace=True)
+    # Determine the decision factor (e.g., use the sum of predicted CPUs and memory as the decision factor)
+    edge_servers_info['decision_factor'] = edge_servers_info['predicted_cpus'] + edge_servers_info['predicted_memory']
 
-    # Add the decision_factor column
-    edge_servers_info['decision_factor'] = np.maximum(edge_servers_info['predicted_cpus'], edge_servers_info['predicted_memory'])
+    sorted_edge_servers_info = edge_servers_info.sort_values(by='decision_factor', ascending=False)
+
 
     # Determine the decision factor (Use the geometric mean to account for both CPU and memory utilization in a multiplicative manner.)
     #edge_servers_info['decision_factor'] = np.sqrt(edge_servers_info['predicted_cpus'] * edge_servers_info['predicted_memory'])
 
-    return edge_servers_info['decision_factor']
-
-# Function to sort edge servers based on decision factors
-def sort_edge_servers_based_on_decision_factors(decision_factors):
-    sorted_edge_servers_info = pd.DataFrame(decision_factors.items(), columns=['EdgeServer', 'decision_factor'])
-    sorted_edge_servers_info = sorted_edge_servers_info.sort_values(by='decision_factor', ascending=False)
     return sorted_edge_servers_info
+
 
 # Integrated Offloading and Dynamic Scaling Algorithm
 def integrated_offloading_and_scaling_algorithm(parameters):
@@ -171,15 +160,15 @@ def integrated_offloading_and_scaling_algorithm(parameters):
 
     # Task Offloading Decision
     decision_factors = PredictResourceRequirements()
-    sorted_edge_servers_info = sort_edge_servers_based_on_decision_factors(decision_factors)
+    sorted_edge_servers_info = decision_factors
 
     for service in Service.all():
         print(f"Service: {service}, Server: {service.server}")
         offloading_action = None  # Initialize offloading_action variable
 
-        if service.server is not None:
+        if not service.being_provisioned:
             #P_decision = decision_factors[service.server]  # Retrieve decision factor for the current service
-            P_decision = decision_factors.loc[service.server]
+            P_decision = decision_factors
 
             offloading_action = OffloadingDecision(P_decision, T_th)
 
@@ -192,9 +181,9 @@ def integrated_offloading_and_scaling_algorithm(parameters):
                     if edge_server.has_capacity_to_host(service=service):
                         if service.server != edge_server:
                             # Provision service to edge server
-                            service.provision(target_server=edge_server)
-                            migration_counts['hybrid'] += 1
                             print(f"[STEP {parameters['current_step']}] Migrating {service} from {service.server} to {edge_server}")
+                            service.provision(target_server=edge_server)
+
                             break
 
 
@@ -225,7 +214,8 @@ def ElasticResourceProvisioning(N, Delta_N_out, Delta_N_in, scaling_decision):
 
 # Function to decide whether to process a service locally or migrate based on the task offloading algorithm
 def OffloadingDecision(P_decision, T_th):
-    if P_decision < T_th:
+    if P_decision['decision_factor'].iloc[0] < T_th:
+
         return "Process Locally"
     else:
         return "Migrate"
@@ -247,18 +237,18 @@ def stopping_criterion(model: object):
     return provisioned_services == Service.count()
 
 # Creating Simulator objects for each algorithm
-simulator_hybrid = Simulator(
+simulator = Simulator(
     tick_duration=1,
     tick_unit="seconds",
-    stopping_criterion=lambda model: model.schedule.steps == 10,
+    stopping_criterion=stopping_criterion,
     resource_management_algorithm=integrated_offloading_and_scaling_algorithm,
 )
 
 # Loading a sample dataset from datasets for each simulator
-simulator_hybrid.initialize(input_file="datasets/sample_dataset1.json")
+simulator.initialize(input_file="datasets/sample_dataset2.json")
 
 # Executing the simulations
-simulator_hybrid.run_model()
+simulator.run_model()
 
 # Gathering the list of msgpack files in the current directory
 logs_directory = f"{os.getcwd()}/logs"

@@ -8,11 +8,9 @@ import ast
 from pathlib import Path
 from sklearn.preprocessing import PolynomialFeatures
 
-
 # Load the saved model
 model_save_path = Path(".cache") / "trained_model" 
 model = tf.keras.models.load_model(model_save_path)
-#model = tf.keras.models.load_model("hybrid_model.h5")
 
 # Load your dataset (assuming the dataset is in a pandas DataFrame)
 df = pd.read_csv("datasets/borg_traces_data.csv")
