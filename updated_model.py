@@ -99,8 +99,6 @@ X_test_reshaped = tf.reshape(X_test, (X_test.shape[0], 1, X_test.shape[1]))
 
 # Define the model using TensorFlow layers
 '''
-
-
 # Model with only GRU layer
 model = tf.keras.Sequential([
     tf.keras.layers.GRU(units=128, activation='relu', input_shape=(1, X_train.shape[1])),
@@ -117,8 +115,7 @@ model = tf.keras.Sequential([
     tf.keras.layers.LSTM(units=512, return_sequences=True, input_shape=(1, X_train.shape[1])),
     tf.keras.layers.LSTM(units=128, activation='relu'),
     tf.keras.layers.Dense(units=2, activation='linear')     
-])  
-
+]) 
 
 '''
 model = tf.keras.Sequential([
@@ -181,10 +178,25 @@ history = model.fit(X_train_reshaped, y_train, epochs=25, batch_size=32,
                     validation_data=(X_test_reshaped, y_test), callbacks=[tensorboard_callback])
 
 # Plot both training and validation loss over epochs
-plt.plot(history.history['loss'], label='Training Loss')
-plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.figure(figsize=(12, 6))
+
+# Plot Training Loss
+plt.subplot(1, 2, 1)
+plt.plot(history.history['loss'], label='Training Loss', color='blue')
+plt.plot(history.history['val_loss'], label='Validation Loss', color='red')
 plt.title('Training and Validation Loss over Epochs')
 plt.xlabel('Epochs')
 plt.ylabel('Loss')
 plt.legend()
+
+# Plot Accuracy
+plt.subplot(1, 2, 2)
+plt.plot(history.history['accuracy'], label='Training Accuracy', color='blue')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy', color='red')
+plt.title('Training and Validation Accuracy over Epochs')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.legend()
+
+plt.tight_layout()
 plt.show()
