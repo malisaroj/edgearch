@@ -58,7 +58,7 @@ features_for_prediction = scaler.fit_transform(df[[ 'resource_request_cpus', 're
 features_for_prediction_reshaped = tf.reshape(features_for_prediction, 
                                               (features_for_prediction.shape[0], 1, features_for_prediction.shape[1]))
 
-# Choose the number of predictions (e.g., 5)
+# Choose the number of predictions
 num_predictions = 200
 
 # Make predictions for the first 'num_predictions' rows
@@ -67,7 +67,7 @@ predictions = model.predict(features_for_prediction_reshaped[:num_predictions])
 # Clip negative predictions to 0
 predictions = np.maximum(predictions, 0)
 
-# Assuming 'predictions' is a NumPy array, you can use it as needed
+# 'predictions' is a NumPy array
 print("Predictions:\n", predictions)
 
 # Plot the predictions
