@@ -8,9 +8,12 @@ from pathlib import Path
 import os
 import numpy as np
 from keras.utils import pad_sequences
+from sklearn.metrics import mean_absolute_error, mean_squared_error, mean_squared_log_error, r2_score, explained_variance_score
+from tensorflow.keras.initializers import GlorotUniform
+from keras.saving import register_keras_serializable
 
 # Read the entire dataset
-df = pd.read_csv("preprocessed_data.csv")
+df = pd.read_csv("datasets/preprocessed_data.csv")
 
 df['cpu_usage_distribution'] = df['cpu_usage_distribution'].apply(lambda x: np.fromstring(x.strip('[]'), sep=' '))
 df['tail_cpu_usage_distribution'] = df['tail_cpu_usage_distribution'].apply(lambda x: np.fromstring(x.strip('[]'), sep=' '))
@@ -26,7 +29,7 @@ scaler = StandardScaler()
 df['cpu_usage_distribution_scaled'] = df['cpu_usage_distribution_padded'].apply(lambda x: scaler.fit_transform(x.reshape(-1, 1)))
 df['tail_cpu_usage_distribution_scaled'] = df['tail_cpu_usage_distribution_padded'].apply(lambda x: scaler.fit_transform(x.reshape(-1, 1)))
 
-scaled_features = scaler.fit_transform(df[[ 'resource_request_cpus', 'resource_request_memory',  'poly_maximum_usage_cpus random_sample_usage_cpus', 
+scaled_features = scaler.fit_transform(df[[ 'average_usage_cpus', 'average_usage_memory',  'poly_maximum_usage_cpus random_sample_usage_cpus', 
                                             'maximum_usage_cpus',  'poly_random_sample_usage_cpus', 'poly_random_sample_usage_cpus^2', 'memory_demand_rolling_mean',
                                             'maximum_usage_memory',  'interaction_feature', 'poly_maximum_usage_cpus^2', 'memory_demand_lag_1',
                                             'random_sample_usage_cpus', 'assigned_memory',  'poly_maximum_usage_cpus', 'memory_demand_rolling_std', 
@@ -35,11 +38,11 @@ scaled_features = scaler.fit_transform(df[[ 'resource_request_cpus', 'resource_r
                                         ]])
 
 # Labels
-labels = df[['average_usage_cpus', 'average_usage_memory']]
+labels = df[['resource_request_cpus', 'resource_request_memory']]
 
 # Convert numpy arrays to pandas DataFrames
 scaled_features_df = pd.DataFrame(scaled_features, columns=[
-    'resource_request_cpus', 'resource_request_memory', 'poly_maximum_usage_cpus random_sample_usage_cpus',
+    'average_usage_cpus', 'average_usage_memory', 'poly_maximum_usage_cpus random_sample_usage_cpus',
     'maximum_usage_cpus', 'poly_random_sample_usage_cpus', 'poly_random_sample_usage_cpus^2', 'memory_demand_rolling_mean',
     'maximum_usage_memory', 'interaction_feature', 'poly_maximum_usage_cpus^2', 'memory_demand_lag_1',
     'random_sample_usage_cpus', 'assigned_memory', 'poly_maximum_usage_cpus', 'memory_demand_rolling_std',
@@ -79,16 +82,49 @@ X_train_reshaped = tf.reshape(X_train, (X_train.shape[0], 1, X_train.shape[1]))
 X_val_reshaped = tf.reshape(X_val, (X_val.shape[0], 1, X_val.shape[1]))
 X_test_reshaped = tf.reshape(X_test, (X_test.shape[0], 1, X_test.shape[1]))
 
+# Define the model using TensorFlow layers
+'''
+# Model with only Bidirectional GRU layer
+model = tf.keras.Sequential([
+    tf.keras.layers.Bidirectional(tf.keras.layers.GRU(units=512, return_sequences=False), input_shape=(1, 43)),
+    tf.keras.layers.Dense(units=2, activation='sigmoid')
+])
 
+# Model with only GRU layer
+model = tf.keras.Sequential([
+    tf.keras.layers.GRU(units=512, activation='tanh', input_shape=(1, X_train.shape[1])),
+    tf.keras.layers.Dense(units=2, activation='sigmoid')  
+])
+
+# Model with only Bidirectional LSTM layer
+model = tf.keras.Sequential([
+    tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units=512, return_sequences=False), input_shape=(1, X_train.shape[1])),
+    tf.keras.layers.Dense(units=2, activation='sigmoid')  
+])
+
+# Model with only LSTM layer
+model = tf.keras.Sequential([
+    tf.keras.layers.LSTM(units=512, activation='relu', input_shape=(1, X_train.shape[1])),
+    tf.keras.layers.Dense(units=2, activation='sigmoid')  # Output layer with sigmoid activation for regression
+])
+
+# Model with BiLSTM-GRU layer
+model = tf.keras.Sequential([
+    tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units=512, return_sequences=True), input_shape=(1, X_train.shape[1])),
+    tf.keras.layers.GRU(units=128, activation='tanh'),
+    tf.keras.layers.Dense(units=2, activation='sigmoid')  
+])
+'''
+@register_keras_serializable()
 # Custom Attention Layer
 class AttentionLayer(tf.keras.layers.Layer):
     def __init__(self):
         super(AttentionLayer, self).__init__()
 
     def build(self, input_shape):
-        self.W_a = self.add_weight(shape=(input_shape[-1], input_shape[-1]), initializer='random_normal', trainable=True)
-        self.U_a = self.add_weight(shape=(input_shape[-1], input_shape[-1]), initializer='random_normal', trainable=True)
-        self.v_a = self.add_weight(shape=(input_shape[-1], 1), initializer='random_normal', trainable=True)
+        self.W_a = self.add_weight(shape=(input_shape[-1], input_shape[-1]), initializer=GlorotUniform(), trainable=True)
+        self.U_a = self.add_weight(shape=(input_shape[-1], input_shape[-1]), initializer=GlorotUniform(), trainable=True)
+        self.v_a = self.add_weight(shape=(input_shape[-1], 1), initializer=GlorotUniform(), trainable=True)
 
     def call(self, hidden_states):
         # Score computation
@@ -108,8 +144,9 @@ model = tf.keras.Sequential([
     tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units=512, return_sequences=True), input_shape=(1, X_train.shape[1])),
     AttentionLayer(),  # Custom attention layer
     tf.keras.layers.Reshape((1, 1024)),  # Reshape to add the timestep dimension
-    tf.keras.layers.GRU(units=128, activation='relu', return_sequences=False),
-    tf.keras.layers.Dense(units=2, activation='linear')  
+    tf.keras.layers.GRU(units=128, activation='tanh', return_sequences=False),
+    tf.keras.layers.Dropout(0.2),  # Adding dropout layer
+    tf.keras.layers.Dense(units=2, activation='sigmoid')  
 ])
 
 # Define the TensorBoard callback
@@ -128,58 +165,45 @@ history = model.fit(X_train_reshaped, y_train, epochs=25, batch_size=32,
 
 # Evaluate the model on the test data
 loss, mae, rmse, accuracy = model.evaluate(X_test_reshaped, y_test)
-print("Test Loss:", loss)
-print("Test MAE:", mae)
-print("Test RMSE:", rmse)
-print("Test Accuracy:", accuracy)
 
 # Save the trained model after the training is completed
-model_save_path = Path(".cache") / "trained_model.h5"
+model_save_path = Path(".cache")
+model_file = model_save_path / "trained_model.keras"
 
-# Check if the model directory already exists, and replace it if necessary
-if model_save_path.exists():
-    print("A trained model directory already exists. Replacing it.")
+# Ensure the directory exists
+model_save_path.mkdir(parents=True, exist_ok=True)
+
+# Check if the model file already exists, and replace it if necessary
+if model_file.exists():
+    print("A trained model already exists. Replacing it.")
     try:
-        for file in os.listdir(model_save_path):
-            file_path = os.path.join(model_save_path, file)
-            try:
-                if os.path.isfile(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    os.rmdir(file_path)
-            except Exception as e:
-                print(f"Error removing existing file/directory: {e}")
-    except Exception as e:
-        print(f"Error accessing the model directory: {e}")
+        model_file.unlink()  # This removes the file
+    except PermissionError as e:
+        print(f"Error removing existing model file: {e}")
+        # Handle the error as needed, e.g., by renaming the existing file
+        backup_file = model_save_path / "backup_trained_model.h5"
+        model_file.rename(backup_file)
+        print(f"Existing model file has been renamed to {backup_file}")
 else:
-    print("No existing model directory found.")
+    print("No existing model file found.")
 
-# Save the new model in the SavedModel format
-try:
-    model.save(model_save_path)
-except Exception as e:
-    print(f"Error saving the model: {e}")
+# Save the new model
+model.save(model_file)
+print(f"Model saved to {model_file}")
 
-# Plot both training and validation loss over epochs
-plt.figure(figsize=(12, 6))
+# Predictions on test data
+predictions = model.predict(X_test_reshaped)
 
-# Plot Training Loss
-plt.subplot(1, 2, 1)
-plt.plot(history.history['loss'], label='Training Loss', color='blue')
-plt.plot(history.history['val_loss'], label='Validation Loss', color='red')
-plt.title('Training and Validation Loss over Epochs')
-plt.xlabel('Epochs')
-plt.ylabel('Loss')
-plt.legend()
+# Calculate MAE, RMSE, MAPE, R2, MSLE, and Explained Variance Score
+mae = mean_absolute_error(y_test, predictions)
+rmse = np.sqrt(mean_squared_error(y_test, predictions))
+r2 = r2_score(y_test, predictions)
+msle = mean_squared_log_error(y_test, predictions)
+variance = explained_variance_score(y_test, predictions)
 
-# Plot Accuracy
-plt.subplot(1, 2, 2)
-plt.plot(history.history['accuracy'], label='Training Accuracy', color='blue')
-plt.plot(history.history['val_accuracy'], label='Validation Accuracy', color='red')
-plt.title('Training and Validation Accuracy over Epochs')
-plt.xlabel('Epochs')
-plt.ylabel('Accuracy')
-plt.legend()
-
-plt.tight_layout()
-plt.show()
+# Print the metrics
+print("MAE:", mae)
+print("RMSE:", rmse)
+print("R2:", r2)
+print("MSLE:", msle)
+print("Explained Variance Score:", variance)

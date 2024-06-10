@@ -98,7 +98,7 @@ correlation_matrix = df.corr()
 print(correlation_matrix)
 
 # Specify the file name
-file_name = "preprocessed_data.csv"
+file_name = "datasets/preprocessed_data.csv"
 
 # Check if the file exists
 if os.path.exists(file_name):

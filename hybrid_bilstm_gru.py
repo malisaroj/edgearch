@@ -78,21 +78,46 @@ test_dataset = tf.data.Dataset.from_tensor_slices((X_test, y_test)).batch(32)
 X_train_reshaped = tf.reshape(X_train, (X_train.shape[0], 1, X_train.shape[1]))
 X_test_reshaped = tf.reshape(X_test, (X_test.shape[0], 1, X_test.shape[1]))
 
+# Custom Attention Layer
+class AttentionLayer(tf.keras.layers.Layer):
+    def __init__(self):
+        super(AttentionLayer, self).__init__()
+
+    def build(self, input_shape):
+        self.W_a = self.add_weight(shape=(input_shape[-1], input_shape[-1]), initializer='random_normal', trainable=True)
+        self.U_a = self.add_weight(shape=(input_shape[-1], input_shape[-1]), initializer='random_normal', trainable=True)
+        self.v_a = self.add_weight(shape=(input_shape[-1], 1), initializer='random_normal', trainable=True)
+
+    def call(self, hidden_states):
+        # Score computation
+        score_first_part = tf.tensordot(hidden_states, self.W_a, axes=1)
+        h_t = tf.tensordot(hidden_states, self.U_a, axes=1)
+        score = tf.nn.tanh(score_first_part + h_t)
+        
+        # Attention weights
+        attention_weights = tf.nn.softmax(tf.tensordot(score, self.v_a, axes=1), axis=1)
+        
+        # Context vector computation
+        context_vector = tf.reduce_sum(attention_weights * hidden_states, axis=1)
+        return context_vector
+
 # Define the model using TensorFlow layers
 model = tf.keras.Sequential([
-    tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units=64, return_sequences=True), input_shape=(1, X_train.shape[1])),
-    tf.keras.layers.GRU(units=32, activation='relu'),
-    tf.keras.layers.Dense(units=1)
+    tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units=512, return_sequences=True), input_shape=(1, X_train.shape[1])),
+    AttentionLayer(),  # Custom attention layer
+    tf.keras.layers.Reshape((1, 1024)),  # Reshape to add the timestep dimension
+    tf.keras.layers.GRU(units=128, activation='relu', return_sequences=False),
+    tf.keras.layers.Dense(units=2, activation='sigmoid')  
 ])
 
 # Compile the model
-model.compile(optimizer='adam', loss='mean_squared_error')
+model.compile(optimizer='adam', loss='mean_squared_error', metrics='accuracy')
 
 # Print the model summary
 model.summary()
 
 # Train the model
-#model.fit(X_train_reshaped, y_train, epochs=200, batch_size=32)  # Adjust the number of epochs based on your dataset and problem
+model.fit(X_train_reshaped, y_train, epochs=200, batch_size=32)  # Adjust the number of epochs based on your dataset and problem
 
 # Evaluate the model on the test data
 loss = model.evaluate(X_test_reshaped, y_test)
