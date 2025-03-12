@@ -26,6 +26,8 @@ GAMMA = 0.99  # Discount factor for future rewards
 NUM_CLASSES = 62
 IMG_SIZE = (28, 28)
 INPUT_SHAPE = (IMG_SIZE[0], IMG_SIZE[1], 1)
+# Define different noise levels to compare
+noise_level = 0.1
 
 # Update model input shape and preprocessing function
 def preprocess(element):
